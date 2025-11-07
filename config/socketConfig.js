@@ -15,7 +15,7 @@ export const socketConfig = {
       // Allow non-browser clients (no origin) like curl or native apps
       if (!origin) return callback(null, true);
 
-      const configured = (process.env.FRONTEND_URLs || process.env.FRONTEND_URLS || "")
+      const configured = (process.env.FRONTEND_URLs || process.env.FRONTEND_URLS || "https://crm-wdget-shyeyes-fd.vercel.app,https://shyeyes-frontend.vercel.app,https://shyeyes.vercel.app")
         .split(",")
         .map(o => o.trim())
         .filter(Boolean);

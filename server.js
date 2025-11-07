@@ -57,14 +57,15 @@ app.use(express.json());
 
 // ✅ CORS Configuration for Production (supports Vercel preview domains)
 const allowedOrigins = [
+  // Local development
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
+  // Production frontend(s)
+  'https://crm-wdget-shyeyes-fd.vercel.app',
   'https://shyeyes-frontend.vercel.app',
   'https://shyeyes.vercel.app',
-  'https://bitmaxtest.com',
-  'https://shyeyes-frontend.vercel.app',
-  ''
+  'https://bitmaxtest.com'
 ];
 
 const vercelPreviewRegex = /^https:\/\/.+\.vercel\.app$/i;
