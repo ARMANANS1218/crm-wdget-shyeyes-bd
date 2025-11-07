@@ -55,6 +55,28 @@ const httpServer = createServer(app);
 // ===== Middleware =====
 app.use(express.json()); 
 
+// 🔧 BOM Stripping Middleware (prevents UTF-8 BOM from causing parse or MIME issues)
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  res.send = function (body) {
+    try {
+      if (typeof body === 'string') {
+        // Remove leading UTF-8 BOM if present
+        body = body.replace(/^\uFEFF/, '');
+      } else if (Buffer.isBuffer(body)) {
+        // Check for BOM sequence EF BB BF
+        if (body.length >= 3 && body[0] === 0xEF && body[1] === 0xBB && body[2] === 0xBF) {
+          body = body.slice(3);
+        }
+      }
+    } catch (e) {
+      console.warn('BOM strip skipped:', e.message);
+    }
+    return originalSend.call(this, body);
+  };
+  next();
+});
+
 // ✅ CORS Configuration for Production (supports Vercel preview domains)
 const allowedOrigins = [
   // Local development
