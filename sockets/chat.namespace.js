@@ -420,6 +420,14 @@ function generateRoomId(userId1, userId2) {
 
 async function validateBothUsersSubscription(userId1, userId2) {
   try {
+    if (process.env.BYPASS_SUBSCRIPTION_CHECKS === 'true') {
+      return {
+        valid: true,
+        canChat: true,
+        remainingMessages: 'Unlimited',
+        message: 'Bypassed (dev mode)'
+      };
+    }
     const [user1Sub, user2Sub] = await Promise.all([
       Subscription.findOne({ userId: userId1 }).populate('planId'),
       Subscription.findOne({ userId: userId2 }).populate('planId')
@@ -474,6 +482,9 @@ async function validateBothUsersSubscription(userId1, userId2) {
 
 async function checkMessageLimit(userId) {
   try {
+    if (process.env.BYPASS_SUBSCRIPTION_CHECKS === 'true') {
+      return { canSend: true, message: 'Bypassed (dev mode)' };
+    }
     const subscription = await Subscription.findOne({ userId }).populate('planId');
     
     if (!subscription) {
@@ -517,9 +528,9 @@ async function checkMessageLimit(userId) {
 
 async function saveMessageToDB(fromId, toId, message, messageId, tempId = null) {
   try {
-    // Update subscription usage
+    // Update subscription usage (skip when bypass enabled)
     const subscription = await Subscription.findOne({ userId: fromId });
-    if (subscription) {
+    if (subscription && process.env.BYPASS_SUBSCRIPTION_CHECKS !== 'true') {
       subscription.messagesUsedToday = (subscription.messagesUsedToday || 0) + 1;
       subscription.messagesUsedTotal = (subscription.messagesUsedTotal || 0) + 1; // Update primary field
       subscription.totalMessagesUsed = subscription.messagesUsedTotal; // Keep legacy field in sync
@@ -529,6 +540,8 @@ async function saveMessageToDB(fromId, toId, message, messageId, tempId = null) 
         messagesUsedTotal: subscription.messagesUsedTotal,
         totalMessagesUsed: subscription.totalMessagesUsed
       });
+    } else if (process.env.BYPASS_SUBSCRIPTION_CHECKS === 'true') {
+      console.log('🚧 Socket subscription usage update skipped (bypass enabled)');
     }
 
     // Find or create chat
@@ -560,7 +573,9 @@ async function saveMessageToDB(fromId, toId, message, messageId, tempId = null) 
     await chat.save();
 
     const maxMessages = subscription?.planId?.limits?.messagesPerDay;
-    const remainingMessages = maxMessages ? Math.max(0, maxMessages - subscription.messagesUsedToday) : null;
+    const remainingMessages = process.env.BYPASS_SUBSCRIPTION_CHECKS === 'true'
+      ? 'Unlimited'
+      : (maxMessages ? Math.max(0, maxMessages - (subscription?.messagesUsedToday || 0)) : null);
 
     return {
       success: true,

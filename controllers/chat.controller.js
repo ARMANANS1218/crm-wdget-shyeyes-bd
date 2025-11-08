@@ -13,8 +13,12 @@ export const setSocketIO = (socketInstance) => {
 };
 
 // Helper function to validate both users' subscriptions
+// Supports bypass in development for faster local testing using env flag BYPASS_SUBSCRIPTION_CHECKS=true
 const validateBothUsersSubscription = async (userId1, userId2) => {
   try {
+    if (process.env.BYPASS_SUBSCRIPTION_CHECKS === 'true') {
+      return { valid: true, message: 'Bypassed (dev mode)' };
+    }
     const [user1Sub, user2Sub] = await Promise.all([
       Subscription.findOne({ userId: userId1 }).populate('planId'),
       Subscription.findOne({ userId: userId2 }).populate('planId')
@@ -55,12 +59,13 @@ export const sendMessage = async (req, res) => {
       return res.status(400).json({ success: false, message: "Message text is required" });
     }
 
-    // ✅ Validate both users have active subscriptions
+    // ✅ Validate both users have active subscriptions (unless bypassed)
     const bothUsersValid = await validateBothUsersSubscription(from, to);
     if (!bothUsersValid.valid) {
       return res.status(403).json({ 
         success: false, 
-        message: bothUsersValid.message 
+        message: bothUsersValid.message,
+        code: 'SUBSCRIPTION_REQUIRED'
       });
     }
 
@@ -69,11 +74,13 @@ export const sendMessage = async (req, res) => {
 
     // 1️⃣ Fetch sender's subscription
     let subscription = await Subscription.findOne({ userId: from }).populate("planId").exec();
-    if (!subscription) {
-      return res.status(403).json({ success: false, message: "No active subscription" });
-    }
-    if (new Date() > subscription.endDate) {
-      return res.status(403).json({ success: false, message: "Subscription expired" });
+    if (process.env.BYPASS_SUBSCRIPTION_CHECKS !== 'true') {
+      if (!subscription) {
+        return res.status(403).json({ success: false, message: "No active subscription" });
+      }
+      if (new Date() > subscription.endDate) {
+        return res.status(403).json({ success: false, message: "Subscription expired" });
+      }
     }
 
     // 2️⃣ Check total subscription message limits (not daily)
@@ -82,17 +89,20 @@ export const sendMessage = async (req, res) => {
     const remainingMessages = messagesAllowed != null ? Math.max(0, messagesAllowed - messagesUsed) : null;
 
     // 3️⃣ Check if user has exceeded total message limit
-    if (remainingMessages !== null && remainingMessages <= 0) {
-      return res.status(403).json({
-        success: false,
-        message: "Message limit exceeded for this subscription period",
-        debug: { 
-          messagesAllowed, 
-          messagesUsed, 
-          remainingMessages,
-          subscriptionEndDate: subscription.endDate 
-        },
-      });
+    if (process.env.BYPASS_SUBSCRIPTION_CHECKS !== 'true') {
+      if (remainingMessages !== null && remainingMessages <= 0) {
+        return res.status(403).json({
+          success: false,
+          message: "Message limit exceeded for this subscription period",
+          debug: { 
+            messagesAllowed, 
+            messagesUsed, 
+            remainingMessages,
+            subscriptionEndDate: subscription.endDate 
+          },
+          code: 'MESSAGE_LIMIT_EXCEEDED'
+        });
+      }
     }
 
     // 5️⃣ Save message to database
@@ -120,16 +130,20 @@ export const sendMessage = async (req, res) => {
     await chat.save();
 
     // 6️⃣ Update subscription usage (total for entire subscription period)
-    subscription.messagesUsedTotal = (subscription.messagesUsedTotal || 0) + 1;
-    subscription.totalMessagesUsed = subscription.messagesUsedTotal; // Keep legacy field in sync
-    
-    console.log(`📊 Updated subscription usage for user ${subscription.userId}:`, {
-      messagesUsedTotal: subscription.messagesUsedTotal,
-      totalMessagesUsed: subscription.totalMessagesUsed,
-      messagesAllowed: subscription.messagesAllowed
-    });
-    
-    await subscription.save();
+    if (process.env.BYPASS_SUBSCRIPTION_CHECKS !== 'true') {
+      subscription.messagesUsedTotal = (subscription.messagesUsedTotal || 0) + 1;
+      subscription.totalMessagesUsed = subscription.messagesUsedTotal; // Keep legacy field in sync
+      
+      console.log(`📊 Updated subscription usage for user ${subscription.userId}:`, {
+        messagesUsedTotal: subscription.messagesUsedTotal,
+        totalMessagesUsed: subscription.totalMessagesUsed,
+        messagesAllowed: subscription.messagesAllowed
+      });
+      
+      await subscription.save();
+    } else {
+      console.log('🚧 Subscription usage update skipped (bypass enabled)');
+    }
 
     // 7️⃣ Real-time Socket.IO integration
     if (io) {
@@ -161,7 +175,7 @@ export const sendMessage = async (req, res) => {
       chatNsp.to(roomId).emit('new_message', messageObj);
     }
 
-    const finalRemainingMessages = remainingMessages === null ? "Unlimited" : remainingMessages - 1;
+  const finalRemainingMessages = remainingMessages === null ? "Unlimited" : Math.max(0, remainingMessages - 1);
 
     return res.json({
       success: true,
@@ -333,10 +347,15 @@ export const getAllConversations = async (req, res) => {
       .populate("messages.to", "name email profilePic Name")
       .sort({ updatedAt: -1 }); // Sort by most recent conversation first
 
+    // Allow empty state as success (avoid frontend 404 spam)
     if (!chats || chats.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "No conversations found for this user" 
+      console.log(`ℹ️ getAllConversations: No chats found for user ${userId}`);
+      return res.json({
+        success: true,
+        message: "No conversations yet",
+        conversations: [],
+        totalConversations: 0,
+        debug: process.env.BYPASS_SUBSCRIPTION_CHECKS === 'true' ? 'bypass active' : undefined
       });
     }
 
