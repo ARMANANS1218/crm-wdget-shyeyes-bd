@@ -37,6 +37,7 @@ import suscriptionPlanRoutes from "./routes/subscriptionplan.routes.js"
 import notificationRoutes from "./routes/notification.routes.js"
 import paymentRoutes from "./routes/payment.routes.js"
 import usageRoutes from "./routes/usage.routes.js"
+import emailConfigRoutes from "./routes/emailconfig.routes.js"
 import xssClean from "./utils/xssClean.js";
 import zegoRoutes from "./routes/zego.routes.js";
 // import limiter from "./utils/reteLimiter.js";
@@ -243,6 +244,7 @@ app.use("/api/location", locationRoutes );
 app.use("/api/payments", paymentRoutes );
 app.use("/api/zego", zegoRoutes );
 app.use("/api/usage", usageRoutes );
+app.use("/api/email-configs", emailConfigRoutes );
 
 // ===== Root Route =====
 app.get("/", (req, res) => {
