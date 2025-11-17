@@ -1,5 +1,4 @@
 import EmailConfig from '../models/EmailConfig.js';
-import { protectedResponse } from '../utils/protectedResponse.js';
 
 // List all email configs (admins see all for now)
 export const listEmailConfigs = async (req, res) => {
